@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>Echo Translate — Live Academic Interpreter</title>
+  <script>
+    /* Pick the theme before first paint: mint/white before 16:00, grey-purple/pink after; a manual choice lasts until the next switch point. */
+    (function(){var t=null;try{var o=JSON.parse(localStorage.getItem('ct-theme-override')||'null');if(o&&o.until>Date.now())t=o.theme}catch(e){}
+    document.documentElement.dataset.theme=t||(new Date().getHours()<16?'day':'night')})();
+  </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232c9a6e'/%3E%3Cpath d='M15.5 6.2a9.3 9.3 0 1 1-5.6 16.7L5.8 25.6l1.3-4.4A9.3 9.3 0 0 1 15.5 6.2z' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M9.6 16.1c1.5-1.9 2.9-1.9 4.3 0s2.8 1.9 4.3 0 2.8-1.9 3.8-.6' fill='none' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3Ccircle cx='25.6' cy='6.4' r='1.9' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<!-- Static frame art (no animation): a softly lit, rippling water surface — like the liquid in the posters —
+     shown only in the outer frame and fading out before the panels. app.js sizes it to the window. -->
+<svg class="water-art" id="waterArt" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="waterTint" gradientUnits="userSpaceOnUse"><stop offset="0" class="wt-1"/><stop offset=".5" class="wt-2"/><stop offset="1" class="wt-3"/></linearGradient>
+    <!-- Smooth noise = water height; diffuse light gives the gentle swell, specular light the glints. -->
+    <filter id="waterFx" filterUnits="userSpaceOnUse" x="0" y="0" width="1600" height="900" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.0017 0.0062" numOctaves="2" seed="8" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="6" result="soft"/>
+      <feDiffuseLighting in="soft" surfaceScale="30" diffuseConstant="1" kernelUnitLength="4" result="shadeRaw" class="wf-diffuse">
+        <feDistantLight azimuth="230" elevation="50"/>
+      </feDiffuseLighting>
+      <!-- Soften the lit result: removes the fine contour steps that 8-bit height maps produce. -->
+      <feGaussianBlur in="shadeRaw" stdDeviation="3.5" result="shade"/>
+      <feComponentTransfer in="shade" result="swell">
+        <feFuncR type="linear" slope="0.5" intercept="0.56"/><feFuncG type="linear" slope="0.5" intercept="0.56"/><feFuncB type="linear" slope="0.5" intercept="0.56"/>
+      </feComponentTransfer>
+      <feSpecularLighting in="soft" surfaceScale="30" specularConstant="0.85" specularExponent="22" kernelUnitLength="4" result="glossRaw" class="wf-gloss">
+        <feDistantLight azimuth="230" elevation="36"/>
+      </feSpecularLighting>
+      <feGaussianBlur in="glossRaw" stdDeviation="3.5" result="gloss"/>
+      <feBlend in="SourceGraphic" in2="swell" mode="multiply" result="body"/>
+      <feComposite in="gloss" in2="body" operator="arithmetic" k1="0" k2="0.7" k3="1" k4="0"/>
+    </filter>
+    <filter id="waterEdge" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="9"/></filter>
+    <mask id="waterMask" maskUnits="userSpaceOnUse" x="0" y="0" width="1600" height="900">
+      <rect id="waterMaskOuter" x="0" y="0" width="1600" height="900" fill="#fff"/>
+      <rect id="waterMaskInner" x="42" y="42" width="1516" height="816" rx="14" fill="#000" filter="url(#waterEdge)"/>
+    </mask>
+  </defs>
+  <rect id="waterSurface" x="0" y="0" width="1600" height="900" fill="url(#waterTint)" filter="url(#waterFx)" mask="url(#waterMask)"/>
+</svg>
+<div id="app">
+  <header class="topbar">
+    <!-- Icon "Echo": a speech bubble shaped like a falling drop, carrying one sound wave, with a small live spark —
+         a voice becoming a ripple, then meaning. -->
+    <div class="brand" aria-label="Echo Translate" title="Echo Translate"><div class="brand-symbol">
+      <svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true" focusable="false">
+        <path d="M15.5 6.2a9.3 9.3 0 1 1-5.6 16.7L5.8 25.6l1.3-4.4A9.3 9.3 0 0 1 15.5 6.2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M9.6 16.1c1.5-1.9 2.9-1.9 4.3 0s2.8 1.9 4.3 0 2.8-1.9 3.8-.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="25.6" cy="6.4" r="1.9" fill="currentColor"/>
+      </svg>
+    </div></div>
+    <div class="session-chip" id="sessionChip"><span class="status-dot" id="statusDot"></span><span id="microStatus" class="sr-only">MICROPHONE OFF</span><span class="session-time" id="sessionTime">00:00:00</span><span class="mic-meter" id="micMeter" hidden aria-label="收音电平"><i></i><i></i><i></i><i></i><i></i></span></div>
+    <section class="toolbar" aria-label="课堂设置">
+      <div class="toolblock"><label for="languageSelect">讲课语言</label><select id="languageSelect"><option value="en-US">English · US</option><option value="en-GB">English · UK</option><option value="zh-CN">中文</option><option value="fr-FR">Français</option><option value="de-DE">Deutsch</option><option value="es-ES">Español</option><option value="ja-JP">日本語</option></select></div>
+      <div class="toolblock"><label for="domainSelect">专业领域</label><select id="domainSelect"><option value="management">Project Management</option><option value="business">Business</option><option value="finance">Finance</option><option value="quant">Quantitative Finance</option><option value="economics">Economics</option><option value="math">Mathematics</option><option value="statistics">Statistics</option><option value="cs">Computer Science</option><option value="engineering">Engineering</option><option value="physics">Physics</option><option value="biology">Biology</option><option value="law">Law</option><option value="design">Design</option><option value="general">General</option></select></div>
+      <div class="toolblock"><label for="analysisSelect">知识分析</label><select id="analysisSelect"><option value="auto" selected>自动 · 优先 Codex</option><option value="codex">Codex · 订阅额度</option><option value="ollama">Ollama · 本地模型</option><option value="heuristic">基础摘要 · 免模型</option></select></div>
+      <div class="toolblock compact"><label for="intervalSelect">整理间隔</label><select id="intervalSelect"><option value="10" selected>10 秒</option><option value="30">30 秒</option></select></div>
+    </section>
+    <div class="top-actions">
+      <button class="button secondary small icon-only" id="themeBtn" title="切换配色（每天 16:00 自动切换）">◐</button>
+      <button class="button secondary small icon-only" id="fullscreenBtn" title="全屏切换，或按 F11" aria-label="全屏">⛶</button>
+      <button class="button secondary small" id="historyBtn" title="查看以往课堂记录（自动保存在本机）">☰ 记录</button>
+      <button class="button secondary small" id="settingsBtn">⚙ 设置</button>
+      <button class="button secondary small" id="exportBtn">⇩ 导出</button>
+      <button class="button primary" id="micBtn"><span id="micIcon">●</span><span id="micLabel">启动麦克风</span></button>
+    </div>
+  </header>
+
+  <main class="workbench">
+    <section class="panel transcript-panel" aria-labelledby="transcriptHeading" id="englishPanel">
+      <div class="panel-head">
+        <div class="panel-title"><span class="panel-index">01</span><h2 id="transcriptHeading">English Transcript</h2></div>
+        <div class="panel-head-right"><button class="follow-btn" data-follow="en" title="滚动到底部并恢复自动追踪">↓ 最新</button><button class="follow-btn clear-btn" id="clearTranscriptBtn" title="清空英文字幕和中文翻译，从头接着记。之前的内容仍保存在本场记录里；重点和 Q&A 不受影响。">清空字幕</button></div>
+      </div>
+      <div class="panel-scroll" id="enScroll" tabindex="0" aria-live="off">
+        <div id="enFeed" class="feed"><div class="empty-state" id="enEmpty"></div></div>
+      </div>
+    </section>
+
+    <section class="panel translation-panel" aria-labelledby="translationHeading" id="chinesePanel">
+      <div class="panel-head">
+        <div class="panel-title"><span class="panel-index">02</span><h2 id="translationHeading">中文实时翻译</h2></div>
+        <div class="panel-head-right"><button class="follow-btn" data-follow="zh" title="滚动到底部并恢复自动追踪">↓ 最新</button></div>
+      </div>
+      <div class="panel-scroll" id="zhScroll" tabindex="0" aria-live="off"><div id="zhFeed" class="feed"><div class="empty-state" id="zhEmpty"></div></div></div>
+    </section>
+
+    <section class="right-column" aria-label="课堂智能分析">
+      <section class="panel insights-panel" id="notesPanel" aria-labelledby="notesHeading">
+        <div class="panel-head condensed"><div class="panel-title"><span class="panel-index">03</span><h2 id="notesHeading">重点</h2></div><button class="follow-btn clear-btn" id="clearNotesBtn" title="清空当前显示，内容仍保留在本场课堂记录和导出中。">清空重点</button></div>
+        <div class="panel-scroll" id="notesScroll" tabindex="0"><div id="notesFeed" class="feed mini-feed"><div class="empty-state" id="notesEmpty"></div></div></div>
+      </section>
+
+      <section class="panel questions-panel" id="questionsPanel" aria-labelledby="questionsHeading">
+        <div class="panel-head condensed"><div class="panel-title"><span class="panel-index">04</span><h2 id="questionsHeading">Q&amp;A</h2></div><button class="follow-btn clear-btn" id="clearQaBtn" title="清空当前显示，内容仍保留在本场课堂记录和导出中。">清空Q&amp;A</button></div>
+        <div class="panel-scroll" id="qaScroll" tabindex="0"><div id="qaFeed" class="feed mini-feed"><div class="empty-state" id="qaEmpty"></div></div></div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="settingsOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <header class="modal-head"><div><div class="eyebrow">CUSTOMIZE YOUR CLASSROOM</div><h2 id="settingsTitle">Echo Translate 设置</h2></div><button class="icon-btn" id="settingsClose" aria-label="关闭设置">×</button></header>
+    <div class="modal-body">
+      <label class="form-field"><span>课程名称</span><input id="subjectInput" placeholder="例如 ECON 2010 Intermediate Microeconomics（可留空）" maxlength="150" value=""></label>
+      <label class="form-field"><span>本地 Ollama 模型名称</span><input id="ollamaModelInput" value="qwen2.5:3b" placeholder="qwen2.5:3b"><small>可选：仅在选择 Ollama 模式时使用，需要单独安装 Ollama 和对应模型。</small></label>
+      <label class="form-field"><span>专业术语对照（每行英文 = 中文）</span><textarea id="glossaryInput" rows="8" spellcheck="false" placeholder="critical path = 关键路径"></textarea><small>将鼠标停在译文上，可查看匹配的专业术语。分析模型也会按这里的译法校对中文。</small></label>
+      <div class="form-field"><span>课程 Reference（PPT / Word / PDF）</span><div class="file-actions"><input id="referenceInput" type="file" accept=".txt,.md,.csv,.srt,.pdf,.docx,.pptx"><button class="button secondary small" id="removeReferenceBtn">清除资料</button></div><small id="referenceStatus">还没有附加资料，或可以在下方粘贴提要。Reference 仅用于右侧分析的术语背景。</small><textarea id="referenceText" rows="5" placeholder="可直接粘贴课程大纲、关键词、教师的 PPT 提要…"></textarea></div>
+      <label class="form-field"><span>Codex 整理速度</span><select id="effortSelect"><option value="low" selected>快速（默认，推荐上课用）</option><option value="medium">标准（更细致，每轮更慢）</option><option value="high">深入（最慢，适合课后整理）</option></select><small>控制 Codex 每轮“思考”多久。快速档每轮通常快好几倍，重点、纠错和译文校对更新得更及时；这些都是短小、规则明确的修改，多思考带来的提升很小。若你的 Codex 版本不支持此设置，会自动改用它的默认设置，无需手动配置。</small></label>
+      <label class="form-field"><span>远距离收音增强（实验）</span><select id="boostSelect"><option value="off" selected>关闭（默认，直接用原始麦克风）</option><option value="normal">标准增强（老师离得较远）</option><option value="strong">强增强（坐后排，或老师声音很轻）</option></select><small>开启后先过滤低频嗡声、自动提升轻声并限制过大的声音，再交给 Chrome 识别（需要 Chrome 133 以上）。如果开启后有声音却不出字幕，约 8 秒内会自动改回原始麦克风。顶栏计时旁的小电平条显示收音大小：老师说话时亮 2–4 格最合适；几乎不亮说明声音没收进来。</small></label>
+      <div class="settings-flex"><label class="check-row"><input type="checkbox" id="useSlipFix" checked><span>自动修正口误与误识别（重复词、说错马上改口、术语听错；鼠标停在字幕上可看原识别）</span></label><label class="check-row"><input type="checkbox" id="useInterim" checked><span>翻译未定稿语音片段（更及时，但可能反复修正）</span></label><label class="check-row"><input type="checkbox" id="useNativeLocalSpeech"><span>尝试设备内语音识别（实验功能，需要浏览器语言包）</span></label></div>
+      <div class="info-box"><strong>额度和隐私</strong><p>实时字幕优先使用浏览器能力，无需 API Key；Codex 模式通过本机 <code>codex exec</code> 使用当前登录的 ChatGPT/Codex 订阅额度，仍受套餐限额影响。仅本机 <code>127.0.0.1</code> 可访问这个网站。普通 Chrome 语音识别可能把声音发往浏览器服务商；Codex 模式会将最新文字及所选 Reference 发给 Codex。课堂记录只保存在这台电脑上，和同学之间不互通。</p></div>
+      <div class="settings-row"><div><b>本机连接状态</b><p id="connectionStatus">正在检测本机运行环境…</p></div><button class="button secondary small" id="refreshStatusBtn">重新检测</button></div>
+      <div class="settings-row"><div><b>课堂记录</b><p>每场课自动保存在本机，不会自动删除；可随时打开以前的记录或开始新课堂。</p></div><button class="button secondary small" id="openHistoryBtn">查看记录</button></div>
+      <div class="settings-row"><div><b>演示</b><p>用模拟讲课内容试看界面和纠错效果，不开麦克风，也不会写入课堂记录。</p></div><button class="button secondary small" id="demoBtn">演示</button></div>
+    </div>
+    <footer class="modal-foot"><button class="button primary" id="settingsSave">保存并返回</button></footer>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="historyOverlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+    <header class="modal-head"><div><div class="eyebrow">CLASS RECORDS · THIS COMPUTER ONLY</div><h2 id="historyTitle">课堂记录</h2></div><button class="icon-btn" id="historyClose" aria-label="关闭记录">×</button></header>
+    <div class="modal-body">
+      <div class="settings-row first"><div><b>开始新课堂</b><p>当前这场会先保存，然后开始一份新的记录。以前的记录都保留在下面。</p></div><button class="button primary small" id="newSessionBtn">开始新课堂</button></div>
+      <div class="history-list" id="historyList"></div>
+      <small class="records-dir" id="recordsDir"></small>
+    </div>
+  </div>
+</div>
+
+<div hidden aria-hidden="true"><span id="translatorStatus"></span><span id="footerStatus"></span><span id="bottomDot"></span><span id="enCount"></span><span id="zhCount"></span><span id="enFoot"></span><span id="latencyFoot"></span><span id="insightModeFoot"></span><span id="insightTimeFoot"></span><span id="qaCount"></span><span id="sourceNote"></span><span id="modelNote"></span></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Core application: Python 3.10+ standard library only. No pip install required.
+# Optional PDF reference support:
+# pypdf>=5,<7

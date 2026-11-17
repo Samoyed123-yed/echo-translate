@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+
+# Local run state and logs (personal, machine-specific)
+*.log
+keep_running.py
+keep_running.status.json
+server.stdout.log
+server.stderr.log
+
+# Old screenshots from before the redesign
+preview_*.png
+
+# Never commit class records or exports
+EchoTranslate-Records/
+Echo_Translate_*.md
+Echo_Translate_*.json
+*.zip
+*.lnk
+
+# Older name, in case an earlier version ran here
+CodexTranslate-Records/
+Codex_Translate_*.md
+Codex_Translate_*.json
